@@ -48,6 +48,9 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
+
 #include <signal.h>
 #include <string.h>
 #include <sys/ipc.h>
@@ -100,6 +103,7 @@ private:
   bool simulate_control_;
 
   double tf_time_offset_;
+  bool broadcast_fake_tf_;
 
   pid_t pid_;
 
@@ -448,6 +452,8 @@ public:
     pnh_.param("ypspur_bin", ypspur_bin_, std::string("ypspur-coordinator"));
     pnh_.param("param_file", param_file_, std::string(""));
     pnh_.param("tf_time_offset", tf_time_offset_, 0.0);
+
+    pnh_.param("broadcast_fake_tf", broadcast_fake_tf_, true); // 追加
 
     double cmd_vel_expire_s;
     pnh_.param("cmd_vel_expire", cmd_vel_expire_s, -1.0);
@@ -820,6 +826,14 @@ public:
 
     ROS_INFO("ypspur_ros main loop started");
     ros::Rate loop(params_["hz"]);
+
+    // 追加
+    if (broadcast_fake_tf_) {
+      std::cout << "<---fake_tf mode--->" << std::endl;
+    } else {
+      std::cout << "<---odom_tf mode--->" << std::endl;
+    }
+
     while (!g_shutdown)
     {
       const auto now = ros::Time::now();
@@ -881,7 +895,21 @@ public:
             odom_trans.transform.translation.y = y;
             odom_trans.transform.translation.z = 0;
             odom_trans.transform.rotation = odom.pose.pose.orientation;
-            tf_broadcaster_.sendTransform(odom_trans);
+            // 追加
+            if (!broadcast_fake_tf_){
+              tf_broadcaster_.sendTransform(odom_trans);
+            } else {
+              geometry_msgs::TransformStamped fake_trans;
+              fake_trans.header.frame_id = frames_["odom"];
+              fake_trans.child_frame_id = frames_["base_link"];
+              fake_trans.header.stamp = ros::Time(t) + ros::Duration(tf_time_offset_);
+              fake_trans.transform.translation.x = 0;
+              fake_trans.transform.translation.y = 0;
+              fake_trans.transform.translation.z = 0;
+              fake_trans.transform.rotation = tf::createQuaternionMsgFromYaw(0);
+              // tf_broadcaster_.sendTransform(fake_trans);
+
+            }
           }
         }
         previous_odom_stamp_ = current_stamp;
